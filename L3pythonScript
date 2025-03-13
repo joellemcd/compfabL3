@@ -11,7 +11,7 @@
         layer_height: the height of each layer in the print
         extrusion_width: the width of the extruded line from the printer
         travel_feed_rate: the speed at which the extruder moves in X and Y
-        layer_change_feed_rate: the speed at which teh extruder moves when 
+        layer_change_feed_rate: the speed at which the extruder moves when 
             changing layers in the Z direction
         extrusion_feed_rate: the speed at which the extruder move when extruding
 
@@ -112,10 +112,22 @@ def gcode_move(current_pos, next_pos, feed_rate=None, should_extrude=False):
     # to the move command.
     # NOTE: YOUR FLOAT PRECISION MUST MATCH E_VALUE_PRECISION
     if should_extrude:
-        dist = (((current_pos[0]-next_pos[0]))**2+((current_pos[1]-next_pos[1])**2)+((current_pos[2]-next_pos[2])**2))**0.5 #calculate 3D distance from current to next position
-        E = ((dist*(0.054+0.0225*pi))/(0.765625*pi)) #calculate length of material into nozzle
-        e_value = e_value_to_string(e) #format data for string
+        dist = (((current_pos[0]-next_pos[0])**2)+((current_pos[1]-next_pos[1])**2)+((current_pos[2]-next_pos[2])**2))**0.5 #calculate 3D distance from current to next position
+        extrusion_width=1.2 * nozzle_diameter
+        a_out = (layer_height*(extrusion_width-layer_height))+(pi*((layer_height/2)**2))
+        v_out = a_out*dist
+        E = v_out/(pi*((filament_diameter/2)**2))
+        #E = ((dist*((layer_height*(extrusion_width-layer_height))+(pi+((layer_height/2)**2))))/(pi*((filament_diameter/2)**2))) #calculate length of material into nozzle
+        e_value = e_value_to_string(E) #format data for string
         move_command_str += " " +PARAM_E + e_value #append extrusion information to g-code command
+        print("Distance: ")
+        print(dist)
+        print("A Out: ")
+        print(a_out)
+        print("V Out: ")
+        print(v_out)
+        print("E value")
+        print(E)
     
     # See if we have a feedrate to use, and handle it differently than other 
     # parameters as it is an integer value
@@ -156,35 +168,38 @@ def generate_gcode():
         # [TODO]: Handle moving to the next layer (Z Position)
         # NOTE- ALL Z MOVEMENTS SHOULD:
         # 1) BE INDEPENDENT MOVES(e.g., G1 Z# and not move with other positions like XYE) 
-        # 2) USE THE `layer_change_feedrate`
+        # 2) USE THE `layer_change_feedrate` 
         # 3) BE IN INCREASING ORDER
         if (not are_floats_equal(current_position[2], line_start_position[2])):
             if line_start_position[2] > current_position[2]:
-                move_to_z_start_command = gcode_move(current_position[2], line_start_position[2], feed_rate=layer_change_feed_rate) #Move to the the line_start_position[2] (z-value)
+                move_to_z_start_command = gcode_move(current_position, (current_position[0], current_position[1], line_start_position[2]), feed_rate = layer_change_feed_rate) #Move to the the line_start_position[2] (z-value)
+                print("Z-Move Command:", move_to_z_start_command)
                 all_move_commands.append(move_to_z_start_command) # Append command
             else:
                 print("Error in Z-position ordering")
-
+            current_position = (current_position[0], current_position[1], line_start_position[2])
+            
         # Now if our current_position is not the start of our line segment
         # we need to move (travel) to the line segment's starting point
         if not is_same_pt(current_position, line_start_position):
             # [Move to the the line_start_position
-            move_to_line_start_command = gcode_move(current_position, line_start_position, feed_rate=travel_feed_rate)
+            move_to_line_start_command = gcode_move(current_position, (line_start_position[0], line_start_position[1], current_position[2]), feed_rate = travel_feed_rate)
             # Append command
             all_move_commands.append(move_to_line_start_command)
+            current_position = line_start_position
         
         # [TODO]: Once our extruder is at the start of the line, create a 
         # command to move AND extrude along 
         # the line segment using `extrusion_feed_rate`
         if is_same_pt(current_position, line_start_position):
-            move_and_extrude_line_segment = gcode_move(current_position, line_end_position, feed_rate = travel_feed_rate, should_extrude=True)
+            move_and_extrude_line_segment = gcode_move(current_position, line_end_position, feed_rate = extrusion_feed_rate, should_extrude=True)
+    
 
             # [TODO]: Append the move command across the line segment 
             all_move_commands.append(move_and_extrude_line_segment)
         
             # [TODO]: Update the current position of our extruder to be at the end of the line
-            current_position = [0, 0, 0]
-            current_position = line_end_position[0]
+            current_position = line_end_position
         
     # End of for-loop above -- now create the full set of commands
 
